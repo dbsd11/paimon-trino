@@ -18,8 +18,6 @@
 
 package org.apache.paimon.trino;
 
-import org.apache.paimon.utils.StringUtils;
-
 import com.google.inject.Binder;
 import com.google.inject.Injector;
 import com.google.inject.Module;
@@ -28,14 +26,10 @@ import io.airlift.json.JsonModule;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.Tracer;
 import io.trino.filesystem.manager.FileSystemModule;
-import io.trino.hdfs.HdfsModule;
-import io.trino.hdfs.authentication.HdfsAuthenticationModule;
 import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorMetadata;
 import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorPageSinkProvider;
 import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorPageSourceProvider;
 import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorSplitManager;
-import io.trino.plugin.hive.NodeVersion;
-import io.trino.plugin.hive.orc.OrcReaderConfig;
 import io.trino.spi.classloader.ThreadContextClassLoader;
 import io.trino.spi.connector.Connector;
 import io.trino.spi.connector.ConnectorContext;
@@ -43,13 +37,7 @@ import io.trino.spi.connector.ConnectorFactory;
 import io.trino.spi.type.TypeManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.w3c.dom.Element;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
 
-import javax.xml.parsers.DocumentBuilderFactory;
-
-import java.io.File;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
@@ -59,11 +47,6 @@ import java.util.Map;
 public class TrinoConnectorFactory implements ConnectorFactory {
 
     private static final Logger LOG = LoggerFactory.getLogger(TrinoConnectorFactory.class);
-
-    // see https://trino.io/docs/current/connector/hive.html#hive-general-configuration-properties
-    private static final String HADOOP_CONF_FILES_KEY = "hive.config.resources";
-    // see org.apache.paimon.utils.HadoopUtils
-    private static final String HADOOP_CONF_PREFIX = "hadoop.";
 
     @Override
     public String getName() {
@@ -82,17 +65,6 @@ public class TrinoConnectorFactory implements ConnectorFactory {
             ConnectorContext context,
             Module module) {
         config = new HashMap<>(config);
-        if (config.containsKey(HADOOP_CONF_FILES_KEY)) {
-            for (String hadoopXml : config.get(HADOOP_CONF_FILES_KEY).split(",")) {
-                try {
-                    readHadoopXml(hadoopXml, config);
-                } catch (Exception e) {
-                    LOG.warn(
-                            "Failed to read hadoop xml file " + hadoopXml + ", skipping this file.",
-                            e);
-                }
-            }
-        }
 
         ClassLoader classLoader = TrinoConnectorFactory.class.getClassLoader();
         try (ThreadContextClassLoader ignored = new ThreadContextClassLoader(classLoader)) {
@@ -100,23 +72,13 @@ public class TrinoConnectorFactory implements ConnectorFactory {
                     new Bootstrap(
                             new JsonModule(),
                             new TrinoModule(config),
-                            new HdfsModule(),
-                            new HdfsAuthenticationModule(),
                             // bind the trino file system module
                             newFileSystemModule(catalogName, context),
                             binder -> {
-                                binder.bind(NodeVersion.class)
-                                        .toInstance(
-                                                new NodeVersion(
-                                                        context.getNodeManager()
-                                                                .getCurrentNode()
-                                                                .getVersion()));
                                 binder.bind(TypeManager.class).toInstance(context.getTypeManager());
                                 binder.bind(OpenTelemetry.class)
                                         .toInstance(context.getOpenTelemetry());
                                 binder.bind(Tracer.class).toInstance(context.getTracer());
-                                binder.bind(OrcReaderConfig.class)
-                                        .toInstance(new OrcReaderConfig());
                             },
                             module);
 
@@ -148,32 +110,6 @@ public class TrinoConnectorFactory implements ConnectorFactory {
                     trinoNodePartitioningProvider,
                     trinoTableOptions,
                     trinoSessionProperties);
-        }
-    }
-
-    private static void readHadoopXml(String path, Map<String, String> config) throws Exception {
-        path = path.trim();
-        if (path.isEmpty()) {
-            return;
-        }
-
-        File xmlFile = new File(path);
-        NodeList propertyNodes =
-                DocumentBuilderFactory.newInstance()
-                        .newDocumentBuilder()
-                        .parse(xmlFile)
-                        .getElementsByTagName("property");
-        for (int i = 0; i < propertyNodes.getLength(); i++) {
-            Node propertyNode = propertyNodes.item(i);
-            if (propertyNode.getNodeType() == 1) {
-                Element propertyElement = (Element) propertyNode;
-                String key = propertyElement.getElementsByTagName("name").item(0).getTextContent();
-                String value =
-                        propertyElement.getElementsByTagName("value").item(0).getTextContent();
-                if (!StringUtils.isNullOrWhitespaceOnly(value)) {
-                    config.putIfAbsent(HADOOP_CONF_PREFIX + key, value);
-                }
-            }
         }
     }
 
