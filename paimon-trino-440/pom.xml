@@ -63,8 +63,26 @@ under the License.
 
         <dependency>
             <groupId>io.trino</groupId>
-            <artifactId>trino-filesystem-s3</artifactId>
+            <artifactId>trino-filesystem-manager</artifactId>
             <version>${trino.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>io.trino</groupId>
+                    <artifactId>trino-filesystem-alluxio</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.trino</groupId>
+                    <artifactId>trino-filesystem-azure</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.trino</groupId>
+                    <artifactId>trino-filesystem-cache-alluxio</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.trino</groupId>
+                    <artifactId>trino-filesystem-gcs</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>

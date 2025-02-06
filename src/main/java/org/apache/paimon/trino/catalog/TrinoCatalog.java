@@ -29,7 +29,6 @@ import org.apache.paimon.manifest.PartitionEntry;
 import org.apache.paimon.options.Options;
 import org.apache.paimon.schema.Schema;
 import org.apache.paimon.schema.SchemaChange;
-import org.apache.paimon.security.SecurityContext;
 import org.apache.paimon.table.Table;
 import org.apache.paimon.trino.ClassLoaderUtils;
 import org.apache.paimon.trino.fileio.TrinoFileIOLoader;
@@ -54,7 +53,6 @@ public class TrinoCatalog implements Catalog {
 
     public TrinoCatalog(Options options, TrinoFileSystemFactory trinoFileSystemFactory) {
         this.options = options;
-        this.configuration = configuration;
         this.trinoFileSystemFactory = trinoFileSystemFactory;
     }
 
@@ -73,11 +71,6 @@ public class TrinoCatalog implements Catalog {
                                                         null,
                                                         new TrinoFileIOLoader(trinoFileSystem),
                                                         null);
-                                        try {
-                                            SecurityContext.install(catalogContext);
-                                        } catch (Exception e) {
-                                            throw new RuntimeException(e);
-                                        }
                                         return CatalogFactory.createCatalog(catalogContext);
                                     },
                                     this.getClass().getClassLoader());

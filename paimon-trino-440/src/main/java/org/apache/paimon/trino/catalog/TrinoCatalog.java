@@ -31,7 +31,6 @@ import org.apache.paimon.metastore.MetastoreClient;
 import org.apache.paimon.options.Options;
 import org.apache.paimon.schema.Schema;
 import org.apache.paimon.schema.SchemaChange;
-import org.apache.paimon.security.SecurityContext;
 import org.apache.paimon.table.Table;
 import org.apache.paimon.trino.ClassLoaderUtils;
 import org.apache.paimon.trino.fileio.TrinoFileIOLoader;
@@ -39,7 +38,6 @@ import org.apache.paimon.trino.fileio.TrinoFileIOLoader;
 import io.trino.filesystem.TrinoFileSystem;
 import io.trino.filesystem.TrinoFileSystemFactory;
 import io.trino.spi.connector.ConnectorSession;
-import org.apache.hadoop.conf.Configuration;
 
 import java.util.List;
 import java.util.Map;
@@ -50,20 +48,14 @@ public class TrinoCatalog implements Catalog {
 
     private final Options options;
 
-    private final Configuration configuration;
-
     private final TrinoFileSystemFactory trinoFileSystemFactory;
 
     private Catalog current;
 
     private volatile boolean inited = false;
 
-    public TrinoCatalog(
-            Options options,
-            Configuration configuration,
-            TrinoFileSystemFactory trinoFileSystemFactory) {
+    public TrinoCatalog(Options options, TrinoFileSystemFactory trinoFileSystemFactory) {
         this.options = options;
-        this.configuration = configuration;
         this.trinoFileSystemFactory = trinoFileSystemFactory;
     }
 
@@ -79,14 +71,9 @@ public class TrinoCatalog implements Catalog {
                                         CatalogContext catalogContext =
                                                 CatalogContext.create(
                                                         options,
-                                                        configuration,
+                                                        null,
                                                         new TrinoFileIOLoader(trinoFileSystem),
                                                         null);
-                                        try {
-                                            SecurityContext.install(catalogContext);
-                                        } catch (Exception e) {
-                                            throw new RuntimeException(e);
-                                        }
                                         return CatalogFactory.createCatalog(catalogContext);
                                     },
                                     this.getClass().getClassLoader());
