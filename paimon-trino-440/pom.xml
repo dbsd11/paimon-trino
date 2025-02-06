@@ -61,6 +61,22 @@ under the License.
             </exclusions>
         </dependency>
 
+         <dependency>
+            <groupId>io.trino</groupId>
+            <artifactId>trino-hive</artifactId>
+            <version>${trino.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>io.trino</groupId>
+                    <artifactId>trino-filesystem</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.trino</groupId>
+                    <artifactId>trino-filesystem-manager</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <dependency>
             <groupId>io.trino</groupId>
             <artifactId>trino-filesystem-manager</artifactId>

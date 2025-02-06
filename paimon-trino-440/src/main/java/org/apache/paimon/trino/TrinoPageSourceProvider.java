@@ -36,10 +36,20 @@ import org.apache.paimon.types.DataField;
 import org.apache.paimon.types.RowType;
 
 import com.google.inject.Inject;
+import io.airlift.units.DataSize;
 import io.trino.filesystem.Location;
 import io.trino.filesystem.TrinoFileSystem;
 import io.trino.filesystem.TrinoFileSystemFactory;
 import io.trino.filesystem.TrinoInputFile;
+import io.trino.memory.context.AggregatedMemoryContext;
+import io.trino.orc.OrcColumn;
+import io.trino.orc.OrcDataSource;
+import io.trino.orc.OrcReader;
+import io.trino.orc.OrcReaderOptions;
+import io.trino.orc.OrcRecordReader;
+import io.trino.orc.TupleDomainOrcPredicate;
+import io.trino.plugin.hive.FileFormatDataSourceStats;
+import io.trino.plugin.hive.orc.OrcPageSource;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.ConnectorPageSource;
 import io.trino.spi.connector.ConnectorPageSourceProvider;
@@ -51,6 +61,7 @@ import io.trino.spi.connector.DynamicFilter;
 import io.trino.spi.predicate.Domain;
 import io.trino.spi.predicate.TupleDomain;
 import io.trino.spi.type.Type;
+import org.joda.time.DateTimeZone;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -63,6 +74,8 @@ import java.util.OptionalLong;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static io.trino.memory.context.AggregatedMemoryContext.newSimpleAggregatedMemoryContext;
+import static io.trino.orc.OrcReader.INITIAL_BATCH_SIZE;
 import static java.util.Objects.requireNonNull;
 import static org.apache.paimon.trino.ClassLoaderUtils.runWithContextClassLoader;
 
@@ -319,6 +332,21 @@ public class TrinoPageSourceProvider implements ConnectorPageSourceProvider {
             List<Type> types,
             List<Domain> domains) {
         switch (format) {
+            case "orc":
+                {
+                    return createOrcDataPageSource(
+                            inputFile,
+                            // TODO: pass options from catalog configuration
+                            new OrcReaderOptions()
+                                    // Default tiny stripe size 8 M is too big for paimon.
+                                    // Cache stripe will cause more read (I want to read one column,
+                                    // but not the whole stripe)
+                                    .withTinyStripeThreshold(
+                                            DataSize.of(4, DataSize.Unit.KILOBYTE)),
+                            columns,
+                            types,
+                            domains);
+                }
             case "parquet":
                 {
                     // todo
@@ -333,6 +361,72 @@ public class TrinoPageSourceProvider implements ConnectorPageSourceProvider {
                 {
                     throw new RuntimeException("Unsupport file format: " + format);
                 }
+        }
+    }
+
+    private ConnectorPageSource createOrcDataPageSource(
+            TrinoInputFile inputFile,
+            OrcReaderOptions options,
+            List<String> columns,
+            List<Type> types,
+            List<Domain> domains) {
+        try {
+            OrcDataSource orcDataSource = new TrinoOrcDataSource(inputFile, options);
+            OrcReader reader =
+                    OrcReader.createOrcReader(orcDataSource, options)
+                            .orElseThrow(() -> new RuntimeException("ORC file is zero length"));
+
+            List<OrcColumn> fileColumns = reader.getRootColumn().getNestedColumns();
+            Map<String, OrcColumn> fieldsMap = new HashMap<>();
+            fileColumns.forEach(column -> fieldsMap.put(column.getColumnName(), column));
+            TupleDomainOrcPredicate.TupleDomainOrcPredicateBuilder predicateBuilder =
+                    TupleDomainOrcPredicate.builder();
+            List<OrcPageSource.ColumnAdaptation> columnAdaptations = new ArrayList<>();
+            List<OrcColumn> fileReadColumns = new ArrayList<>(columns.size());
+            List<Type> fileReadTypes = new ArrayList<>(columns.size());
+
+            for (int i = 0; i < columns.size(); i++) {
+                if (columns.get(i) != null) {
+                    // column exists
+                    columnAdaptations.add(
+                            OrcPageSource.ColumnAdaptation.sourceColumn(fileReadColumns.size()));
+                    OrcColumn orcColumn = fieldsMap.get(columns.get(i));
+                    if (orcColumn == null) {
+                        throw new RuntimeException(
+                                "Column " + columns.get(i) + " does not exist in orc file.");
+                    }
+                    fileReadColumns.add(orcColumn);
+                    fileReadTypes.add(types.get(i));
+                    if (domains.get(i) != null) {
+                        predicateBuilder.addColumn(orcColumn.getColumnId(), domains.get(i));
+                    }
+                } else {
+                    columnAdaptations.add(OrcPageSource.ColumnAdaptation.nullColumn(types.get(i)));
+                }
+            }
+
+            AggregatedMemoryContext memoryUsage = newSimpleAggregatedMemoryContext();
+            OrcRecordReader recordReader =
+                    reader.createRecordReader(
+                            fileReadColumns,
+                            fileReadTypes,
+                            predicateBuilder.build(),
+                            DateTimeZone.UTC,
+                            memoryUsage,
+                            INITIAL_BATCH_SIZE,
+                            RuntimeException::new);
+
+            return new OrcPageSource(
+                    recordReader,
+                    columnAdaptations,
+                    orcDataSource,
+                    Optional.empty(),
+                    Optional.empty(),
+                    memoryUsage,
+                    new FileFormatDataSourceStats(),
+                    reader.getCompressionKind());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 }
