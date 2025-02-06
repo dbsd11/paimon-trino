@@ -61,7 +61,14 @@ under the License.
             </exclusions>
         </dependency>
 
-         <dependency>
+        <dependency>
+            <groupId>io.trino</groupId>
+            <artifactId>trino-main</artifactId>
+            <version>${trino.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
             <groupId>io.trino</groupId>
             <artifactId>trino-hive</artifactId>
             <version>${trino.version}</version>

@@ -38,10 +38,12 @@ import org.apache.paimon.trino.fileio.TrinoFileIOLoader;
 import io.trino.filesystem.TrinoFileSystem;
 import io.trino.filesystem.TrinoFileSystemFactory;
 import io.trino.spi.connector.ConnectorSession;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /** Trino catalog, use it after set session. */
 public class TrinoCatalog implements Catalog {
@@ -114,7 +116,9 @@ public class TrinoCatalog implements Catalog {
 
     @Override
     public List<String> listDatabases() {
-        return current.listDatabases();
+        return current.listDatabases().stream()
+                .filter(database -> !StringUtils.equalsIgnoreCase(database, "default"))
+                .collect(Collectors.toList());
     }
 
     @Override

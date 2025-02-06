@@ -42,8 +42,8 @@ public abstract class AbstractOrcDataSource implements OrcDataSource {
     private final OrcDataSourceId id;
     private final long estimatedSize;
     private final OrcReaderOptions options;
-    private long readTimeNanos;
-    private long readBytes;
+    private volatile long readTimeNanos;
+    private volatile long readBytes;
 
     public AbstractOrcDataSource(OrcDataSourceId id, long estimatedSize, OrcReaderOptions options) {
         this.id = requireNonNull(id, "id is null");
@@ -72,7 +72,7 @@ public abstract class AbstractOrcDataSource implements OrcDataSource {
 
     @Override
     public final long getReadTimeNanos() {
-        return readTimeNanos;
+        return System.nanoTime();
     }
 
     @Override
